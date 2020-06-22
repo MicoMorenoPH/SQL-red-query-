@@ -1,0 +1,30 @@
+DECLARE @whereClause as nvarchar(max)
+DECLARE @qry as nvarchar(max)
+
+IF @filterBy ='withZeroQty'
+BEGIN
+SET @whereClause = ''
+END
+IF @filterBy ='withoutZeroQty'
+BEGIN
+SET @whereClause = 'and onhand <> 0'
+END
+
+SET @qry = N'
+SELECT a.itemCode,a.itemName,a.whsCode,ISNULL(b.LastRequest,''1/1/1900'')LastRequest,ISNULL(c.LastCon,''1/1/1900'')LastCon,d.UOM,d.CONV,ISNULL(e.onhand,0)onhand
+FROM NewItemMaster a
+LEFT JOIN (select max(a.enc_dt)LastRequest,b.item_code,a.branch_code
+     from rq_itemreq_hdr a
+     inner join rq_itemreq_dtl b on a.refno = b.refno
+     group by b.item_code,a.branch_code ) b ON a.itemCode = b.item_code collate database_default --and a.whsCode = b.branch_code collate database_default --GET LAST REQUEST
+LEFT JOIN (SELECT itemcode,whscode,max(docdate) LastCon
+     FROM rq_oign with(nolock)
+     WHERE Transtype = 60
+     GROUP BY ItemCode,whscode) c ON a.itemCode = c.ItemCode collate database_default and a.whsCode = c.WhsCode
+LEFT JOIN newConv d on a.itemCode = d.itemCode and CONV = 1
+LEFT JOIN (SELECT SUM(Quantity)onhand,ItemCode,WhsCode
+     FROM rq_oign (NOLOCK)
+     GROUP BY ItemCode,WhsCode) e on a.itemCode = e.ItemCode and a.whsCode = e.WhsCode
+WHERE a.whsCode = '''+ @whscode +''' and d.UOM is not null '+ @whereClause +' '
+
+EXEC(@qry)
